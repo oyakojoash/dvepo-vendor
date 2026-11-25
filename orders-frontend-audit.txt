@@ -1,0 +1,2726 @@
+
+
+==================================================
+FILE: src/app/orders/page.js
+==================================================
+
+
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useOrders } from "../Context/OrderContext";
+import LogoutButton from "../Components/auth/LogoutButton";
+
+const formatMoney = (amount) =>
+  new Intl.NumberFormat("en-KE", {
+    style: "currency",
+    currency: "KES",
+    maximumFractionDigits: 0,
+  }).format(amount);
+
+const formatDate = (date) =>
+  new Date(date).toLocaleDateString("en-KE", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+const statusStyles = {
+  pending: "bg-amber-100 text-amber-800",
+  accepted: "bg-blue-100 text-blue-800",
+  processing: "bg-indigo-100 text-indigo-800",
+  ready: "bg-purple-100 text-purple-800",
+  dispatched: "bg-cyan-100 text-cyan-800",
+  delivered: "bg-green-100 text-green-800",
+  rejected: "bg-red-100 text-red-800",
+};
+
+export default function VendorOrdersPage() {
+  const {
+    orders,
+    stats,
+    loadError,
+    refreshOrders,
+    advanceOrder,
+    updatePaymentInstructions,
+    markPaymentReceived,
+    acceptOrder,
+    rejectOrder,
+  } = useOrders();
+
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [actionMessage, setActionMessage] = useState("");
+  const [paymentInstruction, setPaymentInstruction] = useState("");
+  const [paymentLink, setPaymentLink] = useState("");
+  const selectOrder = (order) => { setSelectedOrder(order); setPaymentInstruction(order.paymentInstruction || ''); setPaymentLink(order.paymentLink || ''); };
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const matchesType =
+        typeFilter === "all" || order.orderType === typeFilter;
+
+      const matchesStatus =
+        statusFilter === "all" || order.orderStatus === statusFilter;
+
+      const query = search.toLowerCase().trim();
+
+      const matchesSearch =
+        !query ||
+        order.id.toLowerCase().includes(query) ||
+        order.customer.name.toLowerCase().includes(query) ||
+        order.items.some((item) =>
+          item.name.toLowerCase().includes(query)
+        ) ||
+        (order.attribution?.affiliateName || "")
+          .toLowerCase()
+          .includes(query);
+
+      return matchesType && matchesStatus && matchesSearch;
+    });
+  }, [orders, typeFilter, statusFilter, search]);
+
+  const handleAccept = async (orderId) => {
+    const success = await acceptOrder(orderId);
+
+    setActionMessage(
+      success
+        ? `${orderId} accepted successfully.`
+        : "This order cannot be accepted in its current status."
+    );
+
+    setSelectedOrder(null);
+  };
+
+  const handleReject = async (orderId) => {
+    const reason = window.prompt(
+      "Enter the reason for rejecting this order:"
+    );
+
+    if (reason === null) return;
+
+    if (!reason.trim()) {
+      setActionMessage("Please provide a rejection reason.");
+      return;
+    }
+
+    const success = await rejectOrder(orderId, reason.trim());
+
+    setActionMessage(
+      success
+        ? `${orderId} rejected.`
+        : "This order cannot be rejected in its current status."
+    );
+
+    setSelectedOrder(null);
+  };
+
+  const summaryCards = [
+    { label: "Total orders", value: stats.total },
+    { label: "Direct orders", value: stats.direct },
+    { label: "Affiliate orders", value: stats.affiliate },
+    { label: "Pending orders", value: stats.pending },
+  ];
+
+  return (
+    <main className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        {loadError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{loadError}</p>}
+        <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-sm font-medium text-indigo-600">
+              Dvepo Merchant Portal
+            </p>
+
+            <h1 className="mt-1 text-2xl font-bold text-gray-900 sm:text-3xl">
+              Orders
+            </h1>
+
+            <p className="mt-2 text-sm text-gray-500">
+              Manage direct purchases and affiliate-generated orders.
+            </p>
+          </div>
+          <button type="button" onClick={refreshOrders} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700">Refresh orders</button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/" className="w-fit rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">Dashboard</Link>
+            <LogoutButton />
+          </div>
+        </header>
+
+        {actionMessage && (
+          <div
+            role="status"
+            className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700"
+          >
+            <span>{actionMessage}</span>
+
+            <button
+              type="button"
+              onClick={() => setActionMessage("")}
+              className="ml-4 font-semibold text-gray-500 hover:text-gray-900"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {summaryCards.map((card) => (
+            <div
+              key={card.label}
+              className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+            >
+              <p className="text-sm text-gray-500">{card.label}</p>
+
+              <p className="mt-2 text-3xl font-bold text-gray-900">
+                {card.value}
+              </p>
+            </div>
+          ))}
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Order management
+              </h2>
+
+              <p className="mt-1 text-sm text-gray-500">
+                {filteredOrders.length} order(s) found
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search orders..."
+                aria-label="Search orders"
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <select
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value)}
+                aria-label="Filter by order type"
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              >
+                <option value="all">All order types</option>
+                <option value="direct">Direct orders</option>
+                <option value="affiliate">Affiliate orders</option>
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                aria-label="Filter by order status"
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              >
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="accepted">Accepted</option>
+                <option value="processing">Processing</option>
+                <option value="ready">Ready</option>
+                <option value="dispatched">Dispatched</option>
+                <option value="delivered">Delivered</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="border-y border-gray-200 bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Order</th>
+                  <th className="px-4 py-3 font-medium">Customer</th>
+                  <th className="px-4 py-3 font-medium">Order type</th>
+                  <th className="px-4 py-3 font-medium">Items</th>
+                  <th className="px-4 py-3 font-medium">Total</th>
+                  <th className="px-4 py-3 font-medium">Payment</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Date</th>
+                  <th className="px-4 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-gray-100">
+                {filteredOrders.map((order) => (
+                  <tr key={order.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-4 font-semibold text-gray-900">
+                      {order.id}
+                    </td>
+
+                    <td className="px-4 py-4 text-gray-700">
+                      {order.customer.name}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          order.orderType === "affiliate"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {order.orderType === "affiliate"
+                          ? "Affiliate"
+                          : "Direct"}
+                      </span>
+
+                      {order.orderType === "affiliate" &&
+                        order.attribution && (
+                          <p className="mt-1 text-xs text-gray-500">
+                            {order.attribution.affiliateName}
+                          </p>
+                        )}
+                    </td>
+
+                    <td className="px-4 py-4 text-gray-600">
+                      {order.items.reduce(
+                        (total, item) => total + item.quantity,
+                        0
+                      )}{" "}
+                      item(s)
+                    </td>
+
+                    <td className="whitespace-nowrap px-4 py-4 font-medium text-gray-900">
+                      {formatMoney(order.total)}
+                    </td>
+
+                    <td className="px-4 py-4 capitalize text-gray-600">
+                      {order.paymentStatus}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          statusStyles[order.orderStatus] ||
+                          "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {order.orderStatus}
+                      </span>
+                    </td>
+
+                    <td className="whitespace-nowrap px-4 py-4 text-gray-600">
+                      {formatDate(order.createdAt)}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <button
+                        type="button"
+                        onClick={() => selectOrder(order)}
+                        className="font-medium text-indigo-600 hover:text-indigo-800"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {filteredOrders.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-4 py-12 text-center text-gray-500"
+                    >
+                      No orders match your filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {selectedOrder && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setSelectedOrder(null)}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="order-details-title"
+              className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2
+                    id="order-details-title"
+                    className="text-xl font-bold text-gray-900"
+                  >
+                    Order {selectedOrder.id}
+                  </h2>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    {selectedOrder.customer.name}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrder(null)}
+                  aria-label="Close order details"
+                  className="rounded-lg px-3 py-1 text-xl text-gray-500 hover:bg-gray-100"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                <div className="rounded-lg bg-gray-50 p-4">
+                  <p className="text-sm text-gray-500">Order type</p>
+
+                  <p className="mt-1 font-semibold capitalize text-gray-900">
+                    {selectedOrder.orderType}
+                  </p>
+
+                  {selectedOrder.attribution && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      Affiliate:{" "}
+                      {selectedOrder.attribution.affiliateName}
+                      {selectedOrder.attribution.agentName &&
+                        ` · Agent: ${selectedOrder.attribution.agentName}`}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-gray-900">
+                    Products
+                  </h3>
+
+                  <div className="mt-2 divide-y divide-gray-100">
+                    {selectedOrder.items.map((item) => (
+                      <div
+                        key={item.productId}
+                        className="flex justify-between gap-4 py-3 text-sm"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-800">
+                            {item.name}
+                          </p>
+                          <p className="text-gray-500">
+                            {item.quantity} × {formatMoney(item.unitPrice)}
+                          </p>
+                        </div>
+
+                        <p className="font-medium text-gray-900">
+                          {formatMoney(item.quantity * item.unitPrice)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2 border-t border-gray-200 pt-4 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Subtotal</span>
+                    <span>{formatMoney(selectedOrder.subtotal)}</span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Delivery</span>
+                    <span>{formatMoney(selectedOrder.deliveryFee)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-base font-bold">
+                    <span>Total</span>
+                    <span>{formatMoney(selectedOrder.total)}</span>
+                  </div>
+                </div>
+
+                <div className="text-sm text-gray-600">
+                  <p>
+                    Payment:{" "}
+                    <span className="font-medium capitalize">
+                    {selectedOrder.paymentStatus || 'Not recorded'}
+                    </span>
+                  </p>
+
+                  <p className="mt-1">
+                    Delivery: {selectedOrder.shippingAddress.town},{" "}
+                    {selectedOrder.shippingAddress.county}
+                  </p>
+
+                  {selectedOrder.customerNote && (
+                    <p className="mt-2">
+                      Customer note: {selectedOrder.customerNote}
+                    </p>
+                  )}
+
+                  {selectedOrder.rejectionReason && (
+                    <p className="mt-2 text-red-700">
+                      Rejection reason: {selectedOrder.rejectionReason}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {selectedOrder.orderStatus === "pending" && (
+                <div className="mt-6 flex flex-wrap justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleReject(selectedOrder.id)}
+                    className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                  >
+                    Reject order
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAccept(selectedOrder.id)}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                  >
+                    Accept order
+                  </button>
+                </div>
+              )}
+              {{ accepted: 'processing', processing: 'dispatched', dispatched: 'delivered' }[selectedOrder.orderStatus] && (
+                <div className="mt-6 flex justify-end">
+                  <button type="button" onClick={async () => { const next = { accepted: 'processing', processing: 'dispatched', dispatched: 'delivered' }[selectedOrder.orderStatus]; if (await advanceOrder(selectedOrder.id, next)) { setActionMessage(`Order updated to ${next}.`); setSelectedOrder(null); } else setActionMessage('This order could not be advanced.'); }} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Mark {{ accepted: 'processing', processing: 'dispatched', dispatched: 'delivered' }[selectedOrder.orderStatus]}</button>
+                </div>
+              )}
+              <div className="mt-6 space-y-3 border-t border-gray-200 pt-4">
+                <h3 className="font-semibold">Payment instructions</h3>
+                <textarea value={paymentInstruction} onChange={(event) => setPaymentInstruction(event.target.value)} maxLength={2000} className="w-full rounded border border-gray-300 p-2" placeholder="Instructions for paying the Merchant" />
+                <input value={paymentLink} onChange={(event) => setPaymentLink(event.target.value)} maxLength={2048} className="w-full rounded border border-gray-300 p-2" placeholder="https:// payment link (optional)" />
+                <button type="button" onClick={async () => { const ok = await updatePaymentInstructions(selectedOrder.id, paymentInstruction, paymentLink); setActionMessage(ok ? 'Payment instructions saved.' : 'Could not save payment instructions.'); }} className="rounded border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-800">Save payment instructions</button>
+                {selectedOrder.paymentSentAt && !selectedOrder.paymentReceivedAt && <button type="button" onClick={async () => { const ok = await markPaymentReceived(selectedOrder.id); setActionMessage(ok ? 'Payment Received recorded.' : 'Payment Sent is not recorded yet.'); }} className="ml-2 rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Payment Received</button>}
+                {selectedOrder.paymentReceivedAt && <p className="text-sm text-emerald-800">Payment confirmed</p>}
+              </div>
+            </section>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
+
+
+==================================================
+FILE: src/app/Services/orderService.js
+==================================================
+
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
+
+async function request(path, body, method = 'PATCH') {
+  const response = await fetch(`${API_BASE_URL}/api/merchant/orders${path}`, {
+    method, credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...(method === 'PATCH' ? { body: JSON.stringify(body) } : {}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.message || 'Order request failed');
+  return payload;
+}
+
+export async function getMerchantOrders() {
+  const response = await fetch(`${API_BASE_URL}/api/merchant/orders`, { credentials: 'include' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.message || 'Failed to load orders');
+  return payload.map((order) => {
+    const group = order.merchantGroups?.[0] || {};
+    const status = group.status || order.status || 'pending';
+    return {
+      id: order._id,
+      orderType: 'direct',
+      orderStatus: status,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      customer: { name: order.userInfo?.name || 'Customer', email: order.userInfo?.email || '', phone: order.userInfo?.phone || '' },
+      items: (order.products || []).map((line) => ({ name: line.name, quantity: line.quantity, price: line.price, image: line.image })),
+      total: (order.products || []).reduce((sum, line) => sum + line.price * line.quantity, 0),
+      subtotal: (order.products || []).reduce((sum, line) => sum + line.price * line.quantity, 0),
+      deliveryFee: 0,
+      shippingAddress: { town: '', county: '' },
+      paymentStatus: group.paymentConfirmedAt ? 'confirmed' : group.paymentSentAt ? 'sent' : 'not recorded',
+      rejectionReason: group.rejectionReason || null,
+      paymentInstruction: group.paymentInstruction || '',
+      paymentLink: group.paymentLink || '',
+      paymentSentAt: group.paymentSentAt || null,
+      paymentReceivedAt: group.paymentReceivedAt || null,
+    };
+  });
+}
+
+export const decideMerchantOrder = (id, decision, reason) => request(`/${encodeURIComponent(id)}/decision`, { decision, reason });
+export const progressMerchantOrder = (id, status) => request(`/${encodeURIComponent(id)}/status`, { status });
+export const savePaymentInstructions = (id, instruction, link) => request(`/${encodeURIComponent(id)}/payment-instructions`, { instruction, link });
+export const confirmPaymentReceived = (id) => request(`/${encodeURIComponent(id)}/payment-received`, {}, 'PATCH');
+
+
+
+==================================================
+FILE: src/app/Context/OrderContext.js
+==================================================
+
+
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
+import { confirmPaymentReceived, decideMerchantOrder, getMerchantOrders, progressMerchantOrder, savePaymentInstructions } from "../Services/orderService";
+
+const OrderContext = createContext(null);
+
+export function OrderProvider({ children }) {
+  const [orders, setOrders] = useState([]);
+  const [loadError, setLoadError] = useState('');
+  const refreshOrders = useCallback(async () => {
+    try { setOrders(await getMerchantOrders()); setLoadError(''); return true; }
+    catch (error) { setLoadError(error.message); return false; }
+  }, []);
+  useEffect(() => {
+    let active = true;
+    getMerchantOrders().then((rows) => { if (active) setOrders(rows); })
+      .catch((error) => { if (active) setLoadError(error.message); });
+    return () => { active = false; };
+  }, []);
+
+  // Filter orders by type or fulfillment status.
+  const getOrders = useCallback(
+    ({ orderType = "all", orderStatus = "all" } = {}) => {
+      return orders.filter((order) => {
+        const matchesType =
+          orderType === "all" || order.orderType === orderType;
+
+        const matchesStatus =
+          orderStatus === "all" || order.orderStatus === orderStatus;
+
+        return matchesType && matchesStatus;
+      });
+    },
+    [orders]
+  );
+
+  // Update one order without replacing the entire order list.
+  const updateOrder = useCallback((orderId, updates) => {
+    setOrders((currentOrders) =>
+      currentOrders.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              ...updates,
+              updatedAt: new Date().toISOString(),
+            }
+          : order
+      )
+    );
+  }, []);
+
+  // Only pending orders can be accepted.
+  const acceptOrder = useCallback(
+    async (orderId) => {
+      const order = orders.find((item) => item.id === orderId);
+
+      if (!order || order.orderStatus !== "pending") {
+        return false;
+      }
+
+      try { await decideMerchantOrder(orderId, 'accept'); } catch { return false; }
+      updateOrder(orderId, { orderStatus: "accepted", rejectionReason: null });
+
+      return true;
+    },
+    [orders, updateOrder]
+  );
+
+  // Only pending orders can be rejected.
+  const rejectOrder = useCallback(
+    async (orderId, reason = "Order rejected by merchant.") => {
+      const order = orders.find((item) => item.id === orderId);
+
+      if (!order || order.orderStatus !== "pending") {
+        return false;
+      }
+
+      try { await decideMerchantOrder(orderId, 'reject', reason); } catch { return false; }
+      updateOrder(orderId, {
+        orderStatus: "rejected",
+        rejectionReason: reason,
+      });
+
+      return true;
+    },
+    [orders, updateOrder]
+  );
+
+  // Enforce the normal fulfillment sequence.
+  const advanceOrder = useCallback(
+    async (orderId, nextStatus) => {
+      const allowedTransitions = {
+        accepted: ["processing"],
+        processing: ["dispatched"],
+        dispatched: ["delivered"],
+      };
+
+      const order = orders.find((item) => item.id === orderId);
+
+      if (
+        !order ||
+        !allowedTransitions[order.orderStatus]?.includes(nextStatus)
+      ) {
+        return false;
+      }
+
+      try { await progressMerchantOrder(orderId, nextStatus); } catch { return false; }
+      updateOrder(orderId, { orderStatus: nextStatus });
+
+      return true;
+    },
+    [orders, updateOrder]
+  );
+
+  // Record receipt only after an order has been delivered.
+  const confirmCustomerReceipt = useCallback(
+    (orderId) => {
+      const order = orders.find((item) => item.id === orderId);
+
+      if (
+        !order ||
+        order.orderStatus !== "delivered" ||
+        order.customerReceiptStatus === "confirmed"
+      ) {
+        return false;
+      }
+
+      updateOrder(orderId, {
+        customerReceiptStatus: "confirmed",
+      });
+
+      return true;
+    },
+    [orders, updateOrder]
+  );
+
+  const updatePaymentInstructions = useCallback(async (orderId, instruction, link) => {
+    try {
+      const saved = await savePaymentInstructions(orderId, instruction, link);
+      const group = saved.merchantGroup;
+      updateOrder(orderId, { paymentInstruction: group?.paymentInstruction || '', paymentLink: group?.paymentLink || '' });
+      return true;
+    } catch { return false; }
+  }, [updateOrder]);
+
+  const markPaymentReceived = useCallback(async (orderId) => {
+    try { await confirmPaymentReceived(orderId); updateOrder(orderId, { paymentReceivedAt: new Date().toISOString() }); return true; }
+    catch { return false; }
+  }, [updateOrder]);
+
+  // Summary counts for dashboard cards.
+  const stats = useMemo(
+    () => ({
+      total: orders.length,
+
+      direct: orders.filter(
+        (order) => order.orderType === "direct"
+      ).length,
+
+      affiliate: orders.filter(
+        (order) => order.orderType === "affiliate"
+      ).length,
+
+      pending: orders.filter(
+        (order) => order.orderStatus === "pending"
+      ).length,
+
+      processing: orders.filter((order) =>
+        ["accepted", "processing", "ready"].includes(order.orderStatus)
+      ).length,
+
+      dispatched: orders.filter(
+        (order) => order.orderStatus === "dispatched"
+      ).length,
+
+      delivered: orders.filter(
+        (order) => order.orderStatus === "delivered"
+      ).length,
+
+      rejected: orders.filter(
+        (order) => order.orderStatus === "rejected"
+      ).length,
+    }),
+    [orders]
+  );
+
+  const value = useMemo(
+    () => ({
+      orders,
+      loadError,
+      refreshOrders,
+      stats,
+      getOrders,
+      updateOrder,
+      acceptOrder,
+      rejectOrder,
+      advanceOrder,
+      confirmCustomerReceipt,
+      updatePaymentInstructions,
+      markPaymentReceived,
+    }),
+    [
+      orders,
+      loadError,
+      refreshOrders,
+      stats,
+      getOrders,
+      updateOrder,
+      acceptOrder,
+      rejectOrder,
+      advanceOrder,
+      confirmCustomerReceipt,
+      updatePaymentInstructions,
+      markPaymentReceived,
+    ]
+  );
+
+  return (
+    <OrderContext.Provider value={value}>
+      {children}
+    </OrderContext.Provider>
+  );
+}
+
+export function useOrders() {
+  const context = useContext(OrderContext);
+
+  if (!context) {
+    throw new Error("useOrders must be used inside an OrderProvider");
+  }
+
+  return context;
+}
+
+
+
+==================================================
+FILE: src/app/Mock data/mockOrders.js
+==================================================
+
+
+export const mockOrders = [
+  {
+    id: "DVP-1001",
+    merchantId: "MER-001",
+    orderType: "direct",
+    attribution: null,
+
+    customer: {
+      id: "CUS-001",
+      name: "Mary Wanjiku",
+      phone: "0712345678",
+      email: "mary@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-001",
+        name: "Wireless Headphones",
+        productType: "retail",
+        quantity: 1,
+        unitPrice: 3500,
+      },
+      {
+        productId: "PRD-002",
+        name: "Phone Case",
+        productType: "retail",
+        quantity: 2,
+        unitPrice: 500,
+      },
+    ],
+
+    subtotal: 4500,
+    deliveryFee: 200,
+    total: 4700,
+    currency: "KES",
+
+    paymentStatus: "pending",
+    orderStatus: "pending",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Nairobi",
+      town: "Kilimani",
+      address: "Near Yaya Centre",
+    },
+
+    customerNote: "Please call before delivery.",
+    rejectionReason: null,
+
+    createdAt: "2026-10-18T09:30:00.000Z",
+    updatedAt: "2026-10-18T09:30:00.000Z",
+  },
+
+  {
+    id: "DVP-1002",
+    merchantId: "MER-001",
+    orderType: "affiliate",
+
+    attribution: {
+      affiliateId: "AFF-001",
+      affiliateName: "John Kamau",
+      agentId: null,
+      trackingCode: "DV-JOHN-001",
+      attributedAt: "2026-10-17T10:30:00.000Z",
+    },
+
+    customer: {
+      id: "CUS-002",
+      name: "Brian Otieno",
+      phone: "0723456789",
+      email: "brian@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-003",
+        name: "Office Chair",
+        productType: "wholesale",
+        quantity: 4,
+        unitPrice: 6000,
+      },
+    ],
+
+    subtotal: 24000,
+    deliveryFee: 1000,
+    total: 25000,
+    currency: "KES",
+
+    paymentStatus: "paid",
+    orderStatus: "accepted",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Machakos",
+      town: "Mlolongo",
+      address: "Near the main shopping centre",
+    },
+
+    customerNote: "Deliver during business hours.",
+    rejectionReason: null,
+
+    createdAt: "2026-10-17T11:00:00.000Z",
+    updatedAt: "2026-10-17T12:00:00.000Z",
+  },
+
+  {
+    id: "DVP-1003",
+    merchantId: "MER-001",
+    orderType: "affiliate",
+
+    attribution: {
+      affiliateId: "AFF-002",
+      affiliateName: "Grace Affiliate",
+      agentId: "AGT-001",
+      agentName: "David Otieno",
+      trackingCode: "DV-GRACE-002",
+      attributedAt: "2026-10-16T13:45:00.000Z",
+    },
+
+    customer: {
+      id: "CUS-003",
+      name: "Grace Achieng",
+      phone: "0734567890",
+      email: "grace@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-004",
+        name: "Cotton T-Shirt",
+        productType: "retail",
+        quantity: 5,
+        unitPrice: 900,
+      },
+    ],
+
+    subtotal: 4500,
+    deliveryFee: 300,
+    total: 4800,
+    currency: "KES",
+
+    paymentStatus: "paid",
+    orderStatus: "processing",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Nairobi",
+      town: "Westlands",
+      address: "Near Sarit Centre",
+    },
+
+    customerNote: "",
+    rejectionReason: null,
+
+    createdAt: "2026-10-16T14:20:00.000Z",
+    updatedAt: "2026-10-17T08:00:00.000Z",
+  },
+
+  {
+    id: "DVP-1004",
+    merchantId: "MER-001",
+    orderType: "direct",
+    attribution: null,
+
+    customer: {
+      id: "CUS-004",
+      name: "Peter Mwangi",
+      phone: "0745678901",
+      email: "peter@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-005",
+        name: "Bluetooth Speaker",
+        productType: "retail",
+        quantity: 1,
+        unitPrice: 2800,
+      },
+    ],
+
+    subtotal: 2800,
+    deliveryFee: 200,
+    total: 3000,
+    currency: "KES",
+
+    paymentStatus: "paid",
+    orderStatus: "dispatched",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Kiambu",
+      town: "Ruiru",
+      address: "Near Ruiru town centre",
+    },
+
+    customerNote: "Call on arrival.",
+    rejectionReason: null,
+
+    createdAt: "2026-10-15T08:45:00.000Z",
+    updatedAt: "2026-10-18T07:30:00.000Z",
+  },
+
+  {
+    id: "DVP-1005",
+    merchantId: "MER-001",
+    orderType: "direct",
+    attribution: null,
+
+    customer: {
+      id: "CUS-005",
+      name: "Anne Njeri",
+      phone: "0756789012",
+      email: "anne@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-006",
+        name: "Laptop Stand",
+        productType: "retail",
+        quantity: 1,
+        unitPrice: 1800,
+      },
+    ],
+
+    subtotal: 1800,
+    deliveryFee: 200,
+    total: 2000,
+    currency: "KES",
+
+    paymentStatus: "unpaid",
+    orderStatus: "rejected",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Nairobi",
+      town: "Embakasi",
+      address: "Near the shopping centre",
+    },
+
+    customerNote: "",
+    rejectionReason: "Product currently out of stock.",
+
+    createdAt: "2026-10-14T10:15:00.000Z",
+    updatedAt: "2026-10-14T11:00:00.000Z",
+  },
+];
+
+
+
+==================================================
+FILE: src/app/Context/MerchantAuthContext.jsx
+==================================================
+
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  isUnauthenticatedError,
+  merchantAuthService,
+} from "../Services/merchantAuthService";
+
+const MerchantAuthContext = createContext(null);
+const publicPaths = new Set(["/login", "/register"]);
+
+function AuthLoading({ message = "Checking your merchant session…" }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-slate-700">
+      <div role="status" className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm shadow-sm">
+        <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+        {message}
+      </div>
+    </main>
+  );
+}
+
+function MerchantRouteBoundary({ children }) {
+  const pathname = usePathname() || "/";
+  const router = useRouter();
+  const { status, restoreSession } = useMerchantAuth();
+  const isPublic = publicPaths.has(pathname);
+
+  useEffect(() => {
+    if (status === "unauthenticated" && !isPublic) {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+    } else if (status === "authenticated" && isPublic) {
+      router.replace("/");
+    }
+  }, [isPublic, pathname, router, status]);
+
+  if (status === "loading") return <AuthLoading />;
+
+  if (status === "authenticated" && isPublic) return <AuthLoading message="Opening your merchant portal…" />;
+  if (status === "unauthenticated" && !isPublic) return <AuthLoading message="Taking you to sign in…" />;
+
+  if (status === "error" && !isPublic) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-900">We couldn’t verify your session</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">The authentication service could not be reached. Try again, or sign in once the service is available.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <button type="button" onClick={restoreSession} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">Try again</button>
+            <a href="/login" className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Sign in</a>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  return children;
+}
+
+export function MerchantAuthProvider({ children }) {
+  const [merchant, setMerchant] = useState(null);
+  const [status, setStatus] = useState("loading");
+  const [logoutError, setLogoutError] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const restoreSession = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const currentMerchant = await merchantAuthService.getCurrentMerchant();
+      setMerchant(currentMerchant);
+      setStatus("authenticated");
+      return currentMerchant;
+    } catch (error) {
+      setMerchant(null);
+      if (isUnauthenticatedError(error)) {
+        setStatus("unauthenticated");
+      } else {
+        setStatus("error");
+      }
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    merchantAuthService.getCurrentMerchant().then((currentMerchant) => {
+      if (!active) return;
+      setMerchant(currentMerchant);
+      setStatus("authenticated");
+    }).catch((error) => {
+      if (!active) return;
+      setMerchant(null);
+      setStatus(isUnauthenticatedError(error) ? "unauthenticated" : "error");
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const acceptAuthenticatedMerchant = useCallback((profile) => {
+    setMerchant(profile);
+    setLogoutError("");
+    setStatus("authenticated");
+  }, []);
+
+  const logout = useCallback(async () => {
+    setLoggingOut(true);
+    setLogoutError("");
+    try {
+      await merchantAuthService.logout();
+      setMerchant(null);
+      setStatus("unauthenticated");
+      return { success: true };
+    } catch (error) {
+      const message = error.message || "Could not sign out. Please try again.";
+      setLogoutError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoggingOut(false);
+    }
+  }, []);
+
+  const value = useMemo(() => ({
+    merchant,
+    status,
+    logoutError,
+    loggingOut,
+    restoreSession,
+    acceptAuthenticatedMerchant,
+    logout,
+  }), [merchant, status, logoutError, loggingOut, restoreSession, acceptAuthenticatedMerchant, logout]);
+
+  return (
+    <MerchantAuthContext.Provider value={value}>
+      <MerchantRouteBoundary>{children}</MerchantRouteBoundary>
+    </MerchantAuthContext.Provider>
+  );
+}
+
+export function useMerchantAuth() {
+  const context = useContext(MerchantAuthContext);
+  if (!context) throw new Error("useMerchantAuth must be used inside MerchantAuthProvider.");
+  return context;
+}
+
+
+
+==================================================
+FILE: src/app/Services/merchantAuthService.js
+==================================================
+
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+).replace(/\/+$/, "");
+
+export class MerchantAuthError extends Error {
+  constructor(message, status = 0, body = {}) {
+    super(message);
+    this.name = "MerchantAuthError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+async function request(path, { method = "GET", body, signal } = {}) {
+  let response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}/api/merchant-auth${path}`, {
+      method,
+      credentials: "include",
+      cache: "no-store",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: signal || AbortSignal.timeout(10000),
+    });
+  } catch (error) {
+    const message = error?.name === "TimeoutError"
+      ? "The authentication service took too long to respond. Please try again."
+      : "Could not reach the authentication service. Check that it is running and try again.";
+    throw new MerchantAuthError(message);
+  }
+
+  let payload = {};
+  try {
+    const text = await response.text();
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    // Non-JSON or malformed responses are handled using status-based messages.
+  }
+
+  if (!response.ok) {
+    let message;
+    if (response.status === 401) {
+      message = "Invalid email/phone or password.";
+    } else if (response.status === 409) {
+      message = "An account with this email or phone number already exists.";
+    } else if (response.status === 400) {
+      message = payload.message && payload.message !== "Invalid request"
+        ? payload.message
+        : "Check the information entered and try again.";
+    } else if (response.status >= 500) {
+      message = "The authentication service is temporarily unavailable. Please try again.";
+    } else if (payload.message && response.status < 500) {
+      message = payload.message;
+    } else {
+      message = `The request could not be completed (HTTP ${response.status}).`;
+    }
+    throw new MerchantAuthError(message, response.status, payload);
+  }
+
+  return payload;
+}
+
+function safeMerchant(payload) {
+  const merchant = payload?.merchant;
+  if (!merchant || typeof merchant !== "object") {
+    throw new MerchantAuthError("The server returned an invalid merchant profile.");
+  }
+
+  // Allow only the safe profile fields returned by the merchant auth API.
+  return {
+    id: typeof merchant.id === "string" ? merchant.id : "",
+    name: typeof merchant.name === "string" ? merchant.name : "",
+    email: typeof merchant.email === "string" ? merchant.email : "",
+    phone: typeof merchant.phone === "string" ? merchant.phone : "",
+    createdAt: typeof merchant.createdAt === "string" ? merchant.createdAt : null,
+    updatedAt: typeof merchant.updatedAt === "string" ? merchant.updatedAt : null,
+  };
+}
+
+export const merchantAuthService = {
+  async register({ name, email, phone, password }) {
+    const payload = await request("/register", {
+      method: "POST",
+      body: { name, email, phone, password },
+    });
+    return safeMerchant(payload);
+  },
+
+  async login({ identifier, password }) {
+    const payload = await request("/login", {
+      method: "POST",
+      body: { identifier, password },
+    });
+    return safeMerchant(payload);
+  },
+
+  async getCurrentMerchant() {
+    const payload = await request("/me");
+    return safeMerchant(payload);
+  },
+
+  async logout() {
+    await request("/logout", { method: "POST", body: {} });
+  },
+};
+
+export function isUnauthenticatedError(error) {
+  return error instanceof MerchantAuthError && error.status === 401;
+}
+
+
+
+==================================================
+FILE: src/app/providers.js
+==================================================
+
+
+"use client";
+
+import { ProductProvider } from "./Context/ProductContext";
+import { OrderProvider } from "./Context/OrderContext";
+
+export default function Providers({ children }) {
+  return (
+    <ProductProvider>
+      <OrderProvider>
+        {children}
+      </OrderProvider>
+    </ProductProvider>
+  );
+}
+
+
+
+==================================================
+FILE: src/app/orders/page.js
+==================================================
+
+
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useOrders } from "../Context/OrderContext";
+import LogoutButton from "../Components/auth/LogoutButton";
+
+const formatMoney = (amount) =>
+  new Intl.NumberFormat("en-KE", {
+    style: "currency",
+    currency: "KES",
+    maximumFractionDigits: 0,
+  }).format(amount);
+
+const formatDate = (date) =>
+  new Date(date).toLocaleDateString("en-KE", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+const statusStyles = {
+  pending: "bg-amber-100 text-amber-800",
+  accepted: "bg-blue-100 text-blue-800",
+  processing: "bg-indigo-100 text-indigo-800",
+  ready: "bg-purple-100 text-purple-800",
+  dispatched: "bg-cyan-100 text-cyan-800",
+  delivered: "bg-green-100 text-green-800",
+  rejected: "bg-red-100 text-red-800",
+};
+
+export default function VendorOrdersPage() {
+  const {
+    orders,
+    stats,
+    loadError,
+    refreshOrders,
+    advanceOrder,
+    updatePaymentInstructions,
+    markPaymentReceived,
+    acceptOrder,
+    rejectOrder,
+  } = useOrders();
+
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [actionMessage, setActionMessage] = useState("");
+  const [paymentInstruction, setPaymentInstruction] = useState("");
+  const [paymentLink, setPaymentLink] = useState("");
+  const selectOrder = (order) => { setSelectedOrder(order); setPaymentInstruction(order.paymentInstruction || ''); setPaymentLink(order.paymentLink || ''); };
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const matchesType =
+        typeFilter === "all" || order.orderType === typeFilter;
+
+      const matchesStatus =
+        statusFilter === "all" || order.orderStatus === statusFilter;
+
+      const query = search.toLowerCase().trim();
+
+      const matchesSearch =
+        !query ||
+        order.id.toLowerCase().includes(query) ||
+        order.customer.name.toLowerCase().includes(query) ||
+        order.items.some((item) =>
+          item.name.toLowerCase().includes(query)
+        ) ||
+        (order.attribution?.affiliateName || "")
+          .toLowerCase()
+          .includes(query);
+
+      return matchesType && matchesStatus && matchesSearch;
+    });
+  }, [orders, typeFilter, statusFilter, search]);
+
+  const handleAccept = async (orderId) => {
+    const success = await acceptOrder(orderId);
+
+    setActionMessage(
+      success
+        ? `${orderId} accepted successfully.`
+        : "This order cannot be accepted in its current status."
+    );
+
+    setSelectedOrder(null);
+  };
+
+  const handleReject = async (orderId) => {
+    const reason = window.prompt(
+      "Enter the reason for rejecting this order:"
+    );
+
+    if (reason === null) return;
+
+    if (!reason.trim()) {
+      setActionMessage("Please provide a rejection reason.");
+      return;
+    }
+
+    const success = await rejectOrder(orderId, reason.trim());
+
+    setActionMessage(
+      success
+        ? `${orderId} rejected.`
+        : "This order cannot be rejected in its current status."
+    );
+
+    setSelectedOrder(null);
+  };
+
+  const summaryCards = [
+    { label: "Total orders", value: stats.total },
+    { label: "Direct orders", value: stats.direct },
+    { label: "Affiliate orders", value: stats.affiliate },
+    { label: "Pending orders", value: stats.pending },
+  ];
+
+  return (
+    <main className="min-h-screen bg-gray-50 p-4 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        {loadError && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{loadError}</p>}
+        <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <p className="text-sm font-medium text-indigo-600">
+              Dvepo Merchant Portal
+            </p>
+
+            <h1 className="mt-1 text-2xl font-bold text-gray-900 sm:text-3xl">
+              Orders
+            </h1>
+
+            <p className="mt-2 text-sm text-gray-500">
+              Manage direct purchases and affiliate-generated orders.
+            </p>
+          </div>
+          <button type="button" onClick={refreshOrders} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700">Refresh orders</button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/" className="w-fit rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">Dashboard</Link>
+            <LogoutButton />
+          </div>
+        </header>
+
+        {actionMessage && (
+          <div
+            role="status"
+            className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-700"
+          >
+            <span>{actionMessage}</span>
+
+            <button
+              type="button"
+              onClick={() => setActionMessage("")}
+              className="ml-4 font-semibold text-gray-500 hover:text-gray-900"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {summaryCards.map((card) => (
+            <div
+              key={card.label}
+              className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm"
+            >
+              <p className="text-sm text-gray-500">{card.label}</p>
+
+              <p className="mt-2 text-3xl font-bold text-gray-900">
+                {card.value}
+              </p>
+            </div>
+          ))}
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">
+                Order management
+              </h2>
+
+              <p className="mt-1 text-sm text-gray-500">
+                {filteredOrders.length} order(s) found
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search orders..."
+                aria-label="Search orders"
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+
+              <select
+                value={typeFilter}
+                onChange={(event) => setTypeFilter(event.target.value)}
+                aria-label="Filter by order type"
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              >
+                <option value="all">All order types</option>
+                <option value="direct">Direct orders</option>
+                <option value="affiliate">Affiliate orders</option>
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                aria-label="Filter by order status"
+                className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              >
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="accepted">Accepted</option>
+                <option value="processing">Processing</option>
+                <option value="ready">Ready</option>
+                <option value="dispatched">Dispatched</option>
+                <option value="delivered">Delivered</option>
+                <option value="rejected">Rejected</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead className="border-y border-gray-200 bg-gray-50 text-gray-500">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Order</th>
+                  <th className="px-4 py-3 font-medium">Customer</th>
+                  <th className="px-4 py-3 font-medium">Order type</th>
+                  <th className="px-4 py-3 font-medium">Items</th>
+                  <th className="px-4 py-3 font-medium">Total</th>
+                  <th className="px-4 py-3 font-medium">Payment</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Date</th>
+                  <th className="px-4 py-3 font-medium">Actions</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-gray-100">
+                {filteredOrders.map((order) => (
+                  <tr key={order.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-4 font-semibold text-gray-900">
+                      {order.id}
+                    </td>
+
+                    <td className="px-4 py-4 text-gray-700">
+                      {order.customer.name}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          order.orderType === "affiliate"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {order.orderType === "affiliate"
+                          ? "Affiliate"
+                          : "Direct"}
+                      </span>
+
+                      {order.orderType === "affiliate" &&
+                        order.attribution && (
+                          <p className="mt-1 text-xs text-gray-500">
+                            {order.attribution.affiliateName}
+                          </p>
+                        )}
+                    </td>
+
+                    <td className="px-4 py-4 text-gray-600">
+                      {order.items.reduce(
+                        (total, item) => total + item.quantity,
+                        0
+                      )}{" "}
+                      item(s)
+                    </td>
+
+                    <td className="whitespace-nowrap px-4 py-4 font-medium text-gray-900">
+                      {formatMoney(order.total)}
+                    </td>
+
+                    <td className="px-4 py-4 capitalize text-gray-600">
+                      {order.paymentStatus}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                          statusStyles[order.orderStatus] ||
+                          "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {order.orderStatus}
+                      </span>
+                    </td>
+
+                    <td className="whitespace-nowrap px-4 py-4 text-gray-600">
+                      {formatDate(order.createdAt)}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <button
+                        type="button"
+                        onClick={() => selectOrder(order)}
+                        className="font-medium text-indigo-600 hover:text-indigo-800"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {filteredOrders.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className="px-4 py-12 text-center text-gray-500"
+                    >
+                      No orders match your filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {selectedOrder && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+            onClick={() => setSelectedOrder(null)}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="order-details-title"
+              className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2
+                    id="order-details-title"
+                    className="text-xl font-bold text-gray-900"
+                  >
+                    Order {selectedOrder.id}
+                  </h2>
+
+                  <p className="mt-1 text-sm text-gray-500">
+                    {selectedOrder.customer.name}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrder(null)}
+                  aria-label="Close order details"
+                  className="rounded-lg px-3 py-1 text-xl text-gray-500 hover:bg-gray-100"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                <div className="rounded-lg bg-gray-50 p-4">
+                  <p className="text-sm text-gray-500">Order type</p>
+
+                  <p className="mt-1 font-semibold capitalize text-gray-900">
+                    {selectedOrder.orderType}
+                  </p>
+
+                  {selectedOrder.attribution && (
+                    <p className="mt-2 text-sm text-gray-600">
+                      Affiliate:{" "}
+                      {selectedOrder.attribution.affiliateName}
+                      {selectedOrder.attribution.agentName &&
+                        ` · Agent: ${selectedOrder.attribution.agentName}`}
+                    </p>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="font-semibold text-gray-900">
+                    Products
+                  </h3>
+
+                  <div className="mt-2 divide-y divide-gray-100">
+                    {selectedOrder.items.map((item) => (
+                      <div
+                        key={item.productId}
+                        className="flex justify-between gap-4 py-3 text-sm"
+                      >
+                        <div>
+                          <p className="font-medium text-gray-800">
+                            {item.name}
+                          </p>
+                          <p className="text-gray-500">
+                            {item.quantity} × {formatMoney(item.unitPrice)}
+                          </p>
+                        </div>
+
+                        <p className="font-medium text-gray-900">
+                          {formatMoney(item.quantity * item.unitPrice)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2 border-t border-gray-200 pt-4 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Subtotal</span>
+                    <span>{formatMoney(selectedOrder.subtotal)}</span>
+                  </div>
+
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Delivery</span>
+                    <span>{formatMoney(selectedOrder.deliveryFee)}</span>
+                  </div>
+
+                  <div className="flex justify-between text-base font-bold">
+                    <span>Total</span>
+                    <span>{formatMoney(selectedOrder.total)}</span>
+                  </div>
+                </div>
+
+                <div className="text-sm text-gray-600">
+                  <p>
+                    Payment:{" "}
+                    <span className="font-medium capitalize">
+                    {selectedOrder.paymentStatus || 'Not recorded'}
+                    </span>
+                  </p>
+
+                  <p className="mt-1">
+                    Delivery: {selectedOrder.shippingAddress.town},{" "}
+                    {selectedOrder.shippingAddress.county}
+                  </p>
+
+                  {selectedOrder.customerNote && (
+                    <p className="mt-2">
+                      Customer note: {selectedOrder.customerNote}
+                    </p>
+                  )}
+
+                  {selectedOrder.rejectionReason && (
+                    <p className="mt-2 text-red-700">
+                      Rejection reason: {selectedOrder.rejectionReason}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {selectedOrder.orderStatus === "pending" && (
+                <div className="mt-6 flex flex-wrap justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleReject(selectedOrder.id)}
+                    className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                  >
+                    Reject order
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAccept(selectedOrder.id)}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                  >
+                    Accept order
+                  </button>
+                </div>
+              )}
+              {{ accepted: 'processing', processing: 'dispatched', dispatched: 'delivered' }[selectedOrder.orderStatus] && (
+                <div className="mt-6 flex justify-end">
+                  <button type="button" onClick={async () => { const next = { accepted: 'processing', processing: 'dispatched', dispatched: 'delivered' }[selectedOrder.orderStatus]; if (await advanceOrder(selectedOrder.id, next)) { setActionMessage(`Order updated to ${next}.`); setSelectedOrder(null); } else setActionMessage('This order could not be advanced.'); }} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Mark {{ accepted: 'processing', processing: 'dispatched', dispatched: 'delivered' }[selectedOrder.orderStatus]}</button>
+                </div>
+              )}
+              <div className="mt-6 space-y-3 border-t border-gray-200 pt-4">
+                <h3 className="font-semibold">Payment instructions</h3>
+                <textarea value={paymentInstruction} onChange={(event) => setPaymentInstruction(event.target.value)} maxLength={2000} className="w-full rounded border border-gray-300 p-2" placeholder="Instructions for paying the Merchant" />
+                <input value={paymentLink} onChange={(event) => setPaymentLink(event.target.value)} maxLength={2048} className="w-full rounded border border-gray-300 p-2" placeholder="https:// payment link (optional)" />
+                <button type="button" onClick={async () => { const ok = await updatePaymentInstructions(selectedOrder.id, paymentInstruction, paymentLink); setActionMessage(ok ? 'Payment instructions saved.' : 'Could not save payment instructions.'); }} className="rounded border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-800">Save payment instructions</button>
+                {selectedOrder.paymentSentAt && !selectedOrder.paymentReceivedAt && <button type="button" onClick={async () => { const ok = await markPaymentReceived(selectedOrder.id); setActionMessage(ok ? 'Payment Received recorded.' : 'Payment Sent is not recorded yet.'); }} className="ml-2 rounded bg-emerald-700 px-4 py-2 text-sm font-semibold text-white">Payment Received</button>}
+                {selectedOrder.paymentReceivedAt && <p className="text-sm text-emerald-800">Payment confirmed</p>}
+              </div>
+            </section>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
+
+
+==================================================
+FILE: src/app/Services/orderService.js
+==================================================
+
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
+
+async function request(path, body, method = 'PATCH') {
+  const response = await fetch(`${API_BASE_URL}/api/merchant/orders${path}`, {
+    method, credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...(method === 'PATCH' ? { body: JSON.stringify(body) } : {}),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.message || 'Order request failed');
+  return payload;
+}
+
+export async function getMerchantOrders() {
+  const response = await fetch(`${API_BASE_URL}/api/merchant/orders`, { credentials: 'include' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.message || 'Failed to load orders');
+  return payload.map((order) => {
+    const group = order.merchantGroups?.[0] || {};
+    const status = group.status || order.status || 'pending';
+    return {
+      id: order._id,
+      orderType: 'direct',
+      orderStatus: status,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      customer: { name: order.userInfo?.name || 'Customer', email: order.userInfo?.email || '', phone: order.userInfo?.phone || '' },
+      items: (order.products || []).map((line) => ({ name: line.name, quantity: line.quantity, price: line.price, image: line.image })),
+      total: (order.products || []).reduce((sum, line) => sum + line.price * line.quantity, 0),
+      subtotal: (order.products || []).reduce((sum, line) => sum + line.price * line.quantity, 0),
+      deliveryFee: 0,
+      shippingAddress: { town: '', county: '' },
+      paymentStatus: group.paymentConfirmedAt ? 'confirmed' : group.paymentSentAt ? 'sent' : 'not recorded',
+      rejectionReason: group.rejectionReason || null,
+      paymentInstruction: group.paymentInstruction || '',
+      paymentLink: group.paymentLink || '',
+      paymentSentAt: group.paymentSentAt || null,
+      paymentReceivedAt: group.paymentReceivedAt || null,
+    };
+  });
+}
+
+export const decideMerchantOrder = (id, decision, reason) => request(`/${encodeURIComponent(id)}/decision`, { decision, reason });
+export const progressMerchantOrder = (id, status) => request(`/${encodeURIComponent(id)}/status`, { status });
+export const savePaymentInstructions = (id, instruction, link) => request(`/${encodeURIComponent(id)}/payment-instructions`, { instruction, link });
+export const confirmPaymentReceived = (id) => request(`/${encodeURIComponent(id)}/payment-received`, {}, 'PATCH');
+
+
+
+==================================================
+FILE: src/app/Context/OrderContext.js
+==================================================
+
+
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useContext,
+  useMemo,
+  useState,
+} from "react";
+import { confirmPaymentReceived, decideMerchantOrder, getMerchantOrders, progressMerchantOrder, savePaymentInstructions } from "../Services/orderService";
+
+const OrderContext = createContext(null);
+
+export function OrderProvider({ children }) {
+  const [orders, setOrders] = useState([]);
+  const [loadError, setLoadError] = useState('');
+  const refreshOrders = useCallback(async () => {
+    try { setOrders(await getMerchantOrders()); setLoadError(''); return true; }
+    catch (error) { setLoadError(error.message); return false; }
+  }, []);
+  useEffect(() => {
+    let active = true;
+    getMerchantOrders().then((rows) => { if (active) setOrders(rows); })
+      .catch((error) => { if (active) setLoadError(error.message); });
+    return () => { active = false; };
+  }, []);
+
+  // Filter orders by type or fulfillment status.
+  const getOrders = useCallback(
+    ({ orderType = "all", orderStatus = "all" } = {}) => {
+      return orders.filter((order) => {
+        const matchesType =
+          orderType === "all" || order.orderType === orderType;
+
+        const matchesStatus =
+          orderStatus === "all" || order.orderStatus === orderStatus;
+
+        return matchesType && matchesStatus;
+      });
+    },
+    [orders]
+  );
+
+  // Update one order without replacing the entire order list.
+  const updateOrder = useCallback((orderId, updates) => {
+    setOrders((currentOrders) =>
+      currentOrders.map((order) =>
+        order.id === orderId
+          ? {
+              ...order,
+              ...updates,
+              updatedAt: new Date().toISOString(),
+            }
+          : order
+      )
+    );
+  }, []);
+
+  // Only pending orders can be accepted.
+  const acceptOrder = useCallback(
+    async (orderId) => {
+      const order = orders.find((item) => item.id === orderId);
+
+      if (!order || order.orderStatus !== "pending") {
+        return false;
+      }
+
+      try { await decideMerchantOrder(orderId, 'accept'); } catch { return false; }
+      updateOrder(orderId, { orderStatus: "accepted", rejectionReason: null });
+
+      return true;
+    },
+    [orders, updateOrder]
+  );
+
+  // Only pending orders can be rejected.
+  const rejectOrder = useCallback(
+    async (orderId, reason = "Order rejected by merchant.") => {
+      const order = orders.find((item) => item.id === orderId);
+
+      if (!order || order.orderStatus !== "pending") {
+        return false;
+      }
+
+      try { await decideMerchantOrder(orderId, 'reject', reason); } catch { return false; }
+      updateOrder(orderId, {
+        orderStatus: "rejected",
+        rejectionReason: reason,
+      });
+
+      return true;
+    },
+    [orders, updateOrder]
+  );
+
+  // Enforce the normal fulfillment sequence.
+  const advanceOrder = useCallback(
+    async (orderId, nextStatus) => {
+      const allowedTransitions = {
+        accepted: ["processing"],
+        processing: ["dispatched"],
+        dispatched: ["delivered"],
+      };
+
+      const order = orders.find((item) => item.id === orderId);
+
+      if (
+        !order ||
+        !allowedTransitions[order.orderStatus]?.includes(nextStatus)
+      ) {
+        return false;
+      }
+
+      try { await progressMerchantOrder(orderId, nextStatus); } catch { return false; }
+      updateOrder(orderId, { orderStatus: nextStatus });
+
+      return true;
+    },
+    [orders, updateOrder]
+  );
+
+  // Record receipt only after an order has been delivered.
+  const confirmCustomerReceipt = useCallback(
+    (orderId) => {
+      const order = orders.find((item) => item.id === orderId);
+
+      if (
+        !order ||
+        order.orderStatus !== "delivered" ||
+        order.customerReceiptStatus === "confirmed"
+      ) {
+        return false;
+      }
+
+      updateOrder(orderId, {
+        customerReceiptStatus: "confirmed",
+      });
+
+      return true;
+    },
+    [orders, updateOrder]
+  );
+
+  const updatePaymentInstructions = useCallback(async (orderId, instruction, link) => {
+    try {
+      const saved = await savePaymentInstructions(orderId, instruction, link);
+      const group = saved.merchantGroup;
+      updateOrder(orderId, { paymentInstruction: group?.paymentInstruction || '', paymentLink: group?.paymentLink || '' });
+      return true;
+    } catch { return false; }
+  }, [updateOrder]);
+
+  const markPaymentReceived = useCallback(async (orderId) => {
+    try { await confirmPaymentReceived(orderId); updateOrder(orderId, { paymentReceivedAt: new Date().toISOString() }); return true; }
+    catch { return false; }
+  }, [updateOrder]);
+
+  // Summary counts for dashboard cards.
+  const stats = useMemo(
+    () => ({
+      total: orders.length,
+
+      direct: orders.filter(
+        (order) => order.orderType === "direct"
+      ).length,
+
+      affiliate: orders.filter(
+        (order) => order.orderType === "affiliate"
+      ).length,
+
+      pending: orders.filter(
+        (order) => order.orderStatus === "pending"
+      ).length,
+
+      processing: orders.filter((order) =>
+        ["accepted", "processing", "ready"].includes(order.orderStatus)
+      ).length,
+
+      dispatched: orders.filter(
+        (order) => order.orderStatus === "dispatched"
+      ).length,
+
+      delivered: orders.filter(
+        (order) => order.orderStatus === "delivered"
+      ).length,
+
+      rejected: orders.filter(
+        (order) => order.orderStatus === "rejected"
+      ).length,
+    }),
+    [orders]
+  );
+
+  const value = useMemo(
+    () => ({
+      orders,
+      loadError,
+      refreshOrders,
+      stats,
+      getOrders,
+      updateOrder,
+      acceptOrder,
+      rejectOrder,
+      advanceOrder,
+      confirmCustomerReceipt,
+      updatePaymentInstructions,
+      markPaymentReceived,
+    }),
+    [
+      orders,
+      loadError,
+      refreshOrders,
+      stats,
+      getOrders,
+      updateOrder,
+      acceptOrder,
+      rejectOrder,
+      advanceOrder,
+      confirmCustomerReceipt,
+      updatePaymentInstructions,
+      markPaymentReceived,
+    ]
+  );
+
+  return (
+    <OrderContext.Provider value={value}>
+      {children}
+    </OrderContext.Provider>
+  );
+}
+
+export function useOrders() {
+  const context = useContext(OrderContext);
+
+  if (!context) {
+    throw new Error("useOrders must be used inside an OrderProvider");
+  }
+
+  return context;
+}
+
+
+
+==================================================
+FILE: src/app/Mock data/mockOrders.js
+==================================================
+
+
+export const mockOrders = [
+  {
+    id: "DVP-1001",
+    merchantId: "MER-001",
+    orderType: "direct",
+    attribution: null,
+
+    customer: {
+      id: "CUS-001",
+      name: "Mary Wanjiku",
+      phone: "0712345678",
+      email: "mary@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-001",
+        name: "Wireless Headphones",
+        productType: "retail",
+        quantity: 1,
+        unitPrice: 3500,
+      },
+      {
+        productId: "PRD-002",
+        name: "Phone Case",
+        productType: "retail",
+        quantity: 2,
+        unitPrice: 500,
+      },
+    ],
+
+    subtotal: 4500,
+    deliveryFee: 200,
+    total: 4700,
+    currency: "KES",
+
+    paymentStatus: "pending",
+    orderStatus: "pending",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Nairobi",
+      town: "Kilimani",
+      address: "Near Yaya Centre",
+    },
+
+    customerNote: "Please call before delivery.",
+    rejectionReason: null,
+
+    createdAt: "2026-10-18T09:30:00.000Z",
+    updatedAt: "2026-10-18T09:30:00.000Z",
+  },
+
+  {
+    id: "DVP-1002",
+    merchantId: "MER-001",
+    orderType: "affiliate",
+
+    attribution: {
+      affiliateId: "AFF-001",
+      affiliateName: "John Kamau",
+      agentId: null,
+      trackingCode: "DV-JOHN-001",
+      attributedAt: "2026-10-17T10:30:00.000Z",
+    },
+
+    customer: {
+      id: "CUS-002",
+      name: "Brian Otieno",
+      phone: "0723456789",
+      email: "brian@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-003",
+        name: "Office Chair",
+        productType: "wholesale",
+        quantity: 4,
+        unitPrice: 6000,
+      },
+    ],
+
+    subtotal: 24000,
+    deliveryFee: 1000,
+    total: 25000,
+    currency: "KES",
+
+    paymentStatus: "paid",
+    orderStatus: "accepted",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Machakos",
+      town: "Mlolongo",
+      address: "Near the main shopping centre",
+    },
+
+    customerNote: "Deliver during business hours.",
+    rejectionReason: null,
+
+    createdAt: "2026-10-17T11:00:00.000Z",
+    updatedAt: "2026-10-17T12:00:00.000Z",
+  },
+
+  {
+    id: "DVP-1003",
+    merchantId: "MER-001",
+    orderType: "affiliate",
+
+    attribution: {
+      affiliateId: "AFF-002",
+      affiliateName: "Grace Affiliate",
+      agentId: "AGT-001",
+      agentName: "David Otieno",
+      trackingCode: "DV-GRACE-002",
+      attributedAt: "2026-10-16T13:45:00.000Z",
+    },
+
+    customer: {
+      id: "CUS-003",
+      name: "Grace Achieng",
+      phone: "0734567890",
+      email: "grace@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-004",
+        name: "Cotton T-Shirt",
+        productType: "retail",
+        quantity: 5,
+        unitPrice: 900,
+      },
+    ],
+
+    subtotal: 4500,
+    deliveryFee: 300,
+    total: 4800,
+    currency: "KES",
+
+    paymentStatus: "paid",
+    orderStatus: "processing",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Nairobi",
+      town: "Westlands",
+      address: "Near Sarit Centre",
+    },
+
+    customerNote: "",
+    rejectionReason: null,
+
+    createdAt: "2026-10-16T14:20:00.000Z",
+    updatedAt: "2026-10-17T08:00:00.000Z",
+  },
+
+  {
+    id: "DVP-1004",
+    merchantId: "MER-001",
+    orderType: "direct",
+    attribution: null,
+
+    customer: {
+      id: "CUS-004",
+      name: "Peter Mwangi",
+      phone: "0745678901",
+      email: "peter@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-005",
+        name: "Bluetooth Speaker",
+        productType: "retail",
+        quantity: 1,
+        unitPrice: 2800,
+      },
+    ],
+
+    subtotal: 2800,
+    deliveryFee: 200,
+    total: 3000,
+    currency: "KES",
+
+    paymentStatus: "paid",
+    orderStatus: "dispatched",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Kiambu",
+      town: "Ruiru",
+      address: "Near Ruiru town centre",
+    },
+
+    customerNote: "Call on arrival.",
+    rejectionReason: null,
+
+    createdAt: "2026-10-15T08:45:00.000Z",
+    updatedAt: "2026-10-18T07:30:00.000Z",
+  },
+
+  {
+    id: "DVP-1005",
+    merchantId: "MER-001",
+    orderType: "direct",
+    attribution: null,
+
+    customer: {
+      id: "CUS-005",
+      name: "Anne Njeri",
+      phone: "0756789012",
+      email: "anne@example.com",
+    },
+
+    items: [
+      {
+        productId: "PRD-006",
+        name: "Laptop Stand",
+        productType: "retail",
+        quantity: 1,
+        unitPrice: 1800,
+      },
+    ],
+
+    subtotal: 1800,
+    deliveryFee: 200,
+    total: 2000,
+    currency: "KES",
+
+    paymentStatus: "unpaid",
+    orderStatus: "rejected",
+    customerReceiptStatus: "pending",
+
+    shippingAddress: {
+      county: "Nairobi",
+      town: "Embakasi",
+      address: "Near the shopping centre",
+    },
+
+    customerNote: "",
+    rejectionReason: "Product currently out of stock.",
+
+    createdAt: "2026-10-14T10:15:00.000Z",
+    updatedAt: "2026-10-14T11:00:00.000Z",
+  },
+];
+
+
+
+==================================================
+FILE: src/app/Context/MerchantAuthContext.jsx
+==================================================
+
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  isUnauthenticatedError,
+  merchantAuthService,
+} from "../Services/merchantAuthService";
+
+const MerchantAuthContext = createContext(null);
+const publicPaths = new Set(["/login", "/register"]);
+
+function AuthLoading({ message = "Checking your merchant session…" }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 text-slate-700">
+      <div role="status" className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 text-sm shadow-sm">
+        <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent" />
+        {message}
+      </div>
+    </main>
+  );
+}
+
+function MerchantRouteBoundary({ children }) {
+  const pathname = usePathname() || "/";
+  const router = useRouter();
+  const { status, restoreSession } = useMerchantAuth();
+  const isPublic = publicPaths.has(pathname);
+
+  useEffect(() => {
+    if (status === "unauthenticated" && !isPublic) {
+      router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+    } else if (status === "authenticated" && isPublic) {
+      router.replace("/");
+    }
+  }, [isPublic, pathname, router, status]);
+
+  if (status === "loading") return <AuthLoading />;
+
+  if (status === "authenticated" && isPublic) return <AuthLoading message="Opening your merchant portal…" />;
+  if (status === "unauthenticated" && !isPublic) return <AuthLoading message="Taking you to sign in…" />;
+
+  if (status === "error" && !isPublic) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-900">We couldn’t verify your session</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">The authentication service could not be reached. Try again, or sign in once the service is available.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <button type="button" onClick={restoreSession} className="rounded-lg bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">Try again</button>
+            <a href="/login" className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Sign in</a>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  return children;
+}
+
+export function MerchantAuthProvider({ children }) {
+  const [merchant, setMerchant] = useState(null);
+  const [status, setStatus] = useState("loading");
+  const [logoutError, setLogoutError] = useState("");
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const restoreSession = useCallback(async () => {
+    setStatus("loading");
+    try {
+      const currentMerchant = await merchantAuthService.getCurrentMerchant();
+      setMerchant(currentMerchant);
+      setStatus("authenticated");
+      return currentMerchant;
+    } catch (error) {
+      setMerchant(null);
+      if (isUnauthenticatedError(error)) {
+        setStatus("unauthenticated");
+      } else {
+        setStatus("error");
+      }
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    merchantAuthService.getCurrentMerchant().then((currentMerchant) => {
+      if (!active) return;
+      setMerchant(currentMerchant);
+      setStatus("authenticated");
+    }).catch((error) => {
+      if (!active) return;
+      setMerchant(null);
+      setStatus(isUnauthenticatedError(error) ? "unauthenticated" : "error");
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const acceptAuthenticatedMerchant = useCallback((profile) => {
+    setMerchant(profile);
+    setLogoutError("");
+    setStatus("authenticated");
+  }, []);
+
+  const logout = useCallback(async () => {
+    setLoggingOut(true);
+    setLogoutError("");
+    try {
+      await merchantAuthService.logout();
+      setMerchant(null);
+      setStatus("unauthenticated");
+      return { success: true };
+    } catch (error) {
+      const message = error.message || "Could not sign out. Please try again.";
+      setLogoutError(message);
+      return { success: false, error: message };
+    } finally {
+      setLoggingOut(false);
+    }
+  }, []);
+
+  const value = useMemo(() => ({
+    merchant,
+    status,
+    logoutError,
+    loggingOut,
+    restoreSession,
+    acceptAuthenticatedMerchant,
+    logout,
+  }), [merchant, status, logoutError, loggingOut, restoreSession, acceptAuthenticatedMerchant, logout]);
+
+  return (
+    <MerchantAuthContext.Provider value={value}>
+      <MerchantRouteBoundary>{children}</MerchantRouteBoundary>
+    </MerchantAuthContext.Provider>
+  );
+}
+
+export function useMerchantAuth() {
+  const context = useContext(MerchantAuthContext);
+  if (!context) throw new Error("useMerchantAuth must be used inside MerchantAuthProvider.");
+  return context;
+}
+
+
+
+==================================================
+FILE: src/app/Services/merchantAuthService.js
+==================================================
+
+const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000"
+).replace(/\/+$/, "");
+
+export class MerchantAuthError extends Error {
+  constructor(message, status = 0, body = {}) {
+    super(message);
+    this.name = "MerchantAuthError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
+async function request(path, { method = "GET", body, signal } = {}) {
+  let response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}/api/merchant-auth${path}`, {
+      method,
+      credentials: "include",
+      cache: "no-store",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: signal || AbortSignal.timeout(10000),
+    });
+  } catch (error) {
+    const message = error?.name === "TimeoutError"
+      ? "The authentication service took too long to respond. Please try again."
+      : "Could not reach the authentication service. Check that it is running and try again.";
+    throw new MerchantAuthError(message);
+  }
+
+  let payload = {};
+  try {
+    const text = await response.text();
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    // Non-JSON or malformed responses are handled using status-based messages.
+  }
+
+  if (!response.ok) {
+    let message;
+    if (response.status === 401) {
+      message = "Invalid email/phone or password.";
+    } else if (response.status === 409) {
+      message = "An account with this email or phone number already exists.";
+    } else if (response.status === 400) {
+      message = payload.message && payload.message !== "Invalid request"
+        ? payload.message
+        : "Check the information entered and try again.";
+    } else if (response.status >= 500) {
+      message = "The authentication service is temporarily unavailable. Please try again.";
+    } else if (payload.message && response.status < 500) {
+      message = payload.message;
+    } else {
+      message = `The request could not be completed (HTTP ${response.status}).`;
+    }
+    throw new MerchantAuthError(message, response.status, payload);
+  }
+
+  return payload;
+}
+
+function safeMerchant(payload) {
+  const merchant = payload?.merchant;
+  if (!merchant || typeof merchant !== "object") {
+    throw new MerchantAuthError("The server returned an invalid merchant profile.");
+  }
+
+  // Allow only the safe profile fields returned by the merchant auth API.
+  return {
+    id: typeof merchant.id === "string" ? merchant.id : "",
+    name: typeof merchant.name === "string" ? merchant.name : "",
+    email: typeof merchant.email === "string" ? merchant.email : "",
+    phone: typeof merchant.phone === "string" ? merchant.phone : "",
+    createdAt: typeof merchant.createdAt === "string" ? merchant.createdAt : null,
+    updatedAt: typeof merchant.updatedAt === "string" ? merchant.updatedAt : null,
+  };
+}
+
+export const merchantAuthService = {
+  async register({ name, email, phone, password }) {
+    const payload = await request("/register", {
+      method: "POST",
+      body: { name, email, phone, password },
+    });
+    return safeMerchant(payload);
+  },
+
+  async login({ identifier, password }) {
+    const payload = await request("/login", {
+      method: "POST",
+      body: { identifier, password },
+    });
+    return safeMerchant(payload);
+  },
+
+  async getCurrentMerchant() {
+    const payload = await request("/me");
+    return safeMerchant(payload);
+  },
+
+  async logout() {
+    await request("/logout", { method: "POST", body: {} });
+  },
+};
+
+export function isUnauthenticatedError(error) {
+  return error instanceof MerchantAuthError && error.status === 401;
+}
+
+
+
+==================================================
+FILE: src/app/providers.js
+==================================================
+
+
+"use client";
+
+import { ProductProvider } from "./Context/ProductContext";
+import { OrderProvider } from "./Context/OrderContext";
+
+export default function Providers({ children }) {
+  return (
+    <ProductProvider>
+      <OrderProvider>
+        {children}
+      </OrderProvider>
+    </ProductProvider>
+  );
+}
+
