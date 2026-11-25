@@ -16,6 +16,12 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Product image search
+
+Add Product includes local file upload and optional Pexels image search. To enable online search, request an API key from [Pexels](https://www.pexels.com/api/), copy `.env.example` to `.env.local`, set `PEXELS_API_KEY`, and restart the development server. Keep this key server-side; do not add a `NEXT_PUBLIC_` prefix. Without the key, the UI reports that online search is not configured and does not show fabricated results.
+
+The search UI attributes Pexels and the photographer, following the [Pexels API guidelines](https://www.pexels.com/api/documentation/). Pexels' default API limits apply.
+
 You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
